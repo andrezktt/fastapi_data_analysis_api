@@ -1,16 +1,20 @@
-# This is a sample Python script.
+import pandas as pd
+import matplotlib.pyplot as plt
+import io
 
-# Press Shift+F10 to execute it or replace it with your code.
-# Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi.responses import JSONResponse, StreamingResponse
+from typing import List
 
+app = FastAPI(
+    title="API de Análise de Dados com Pandas",
+    description="Uma API para realizar análises estatísticas e gerar visualizações a partir de um arquivo CSV.",
+    version="1.0.0"
+)
 
-def print_hi(name):
-    # Use a breakpoint in the code line below to debug your script.
-    print(f'Hi, {name}')  # Press Ctrl+F8 to toggle the breakpoint.
-
-
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
-    print_hi('PyCharm')
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
+def data_processing(file: UploadFile):
+    try:
+        df = pd.read_csv(file.file)
+        return df
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Erro ao processar arquivo CSV: {e}")
