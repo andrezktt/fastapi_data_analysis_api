@@ -59,3 +59,58 @@ async def generate_histogram(
     plt.close()
 
     return StreamingResponse(buffer, media_type="image/png")
+
+@app.post("/preview/bars", summary="Gera um Gráfico de Barras")
+async def generate_bar_chart(
+        column_x: str = Form(..., description="Nome da coluna categórica para o eixo X."),
+        column_y: str = Form(..., description="Nome da coluna numérica para o eixo Y."),
+        file: UploadFile = File(..., description="Arquivo CSV com os dados.")
+):
+    df = data_processing(file)
+
+    if column_x not in df.columns or column_y not in df.columns:
+        raise HTTPException(status_code=400, detail="Uma ou ambas as colunas não foram encontradas no arquivo.")
+    if not pd.api.types.is_numeric_dtype(df[column_y]):
+        raise HTTPException(status_code=400, detail=f"A coluna do eixo Y ('{column_y}') deve ser numérica.")
+
+    plt.figure(figsize=(10, 7))
+    plt.bar(df[column_x], df[column_y], color='cornflowerblue')
+    plt.title(f"Gráfico de Barras: {column_y} por {column_x}")
+    plt.xlabel(column_x)
+    plt.ylabel(column_y)
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format="png")
+    buffer.seek(0)
+    plt.close()
+
+    return StreamingResponse(buffer, media_type="image/png")
+
+@app.post("/preview/scatter", summary="Gera um Gráfico de Dispersão")
+async def generate_scatter(
+        column_x: str = Form(..., description="Nome da coluna categórica para o eixo X."),
+        column_y: str = Form(..., description="Nome da coluna numérica para o eixo Y."),
+        file: UploadFile = File(..., description="Arquivo CSV com os dados.")
+):
+    df = data_processing(file)
+
+    if column_x not in df.columns or column_y not in df.columns:
+        raise HTTPException(status_code=400, detail="Uma ou ambas as colunas não foram encontradas no arquivo.")
+    if not pd.api.types.is_numeric_dtype(df[column_x]) or not pd.api.types.is_numeric_dtype(df[column_y]):
+        raise HTTPException(status_code=400, detail=f"Ambas as colunas devem ser numéricas para o gráfico de dispersão.")
+
+    plt.figure(figsize=(10, 6))
+    plt.scatter(df[column_x], df[column_y], alpha=0.7, color='purple')
+    plt.title(f"Gráfico de Dispersão: {column_y} vs. {column_x}")
+    plt.xlabel(column_x)
+    plt.ylabel(column_y)
+    plt.grid(visible=True, linestyle="--", alpha=0.6)
+
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format="png")
+    buffer.seek(0)
+    plt.close()
+
+    return StreamingResponse(buffer, media_type="image/png")
