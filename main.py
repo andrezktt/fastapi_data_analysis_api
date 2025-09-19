@@ -18,3 +18,19 @@ def data_processing(file: UploadFile):
         return df
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erro ao processar arquivo CSV: {e}")
+
+@app.get("/", summary="Endpoint Root")
+def read_root():
+    return {"message": "Bem-vindo à API de Análise de Dados"}
+
+@app.post("/statistics", summary="Calcula Estatísticas Descritivas")
+async def get_statistics(file: UploadFile = File(..., description="Arquivo CSV para análise.")):
+    df = data_processing(file)
+
+    numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
+    if not numeric_cols:
+        raise HTTPException(status_code=400, detail="O arquivo CSV não contém colunas numéricas para análise.")
+
+    statistics = df[numeric_cols].describe()
+    json_result = statistics.to_dict()
+    return JSONResponse(content=json_result)
