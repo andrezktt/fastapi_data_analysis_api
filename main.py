@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import io
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import List
 from enum import Enum
@@ -13,8 +13,9 @@ app = FastAPI(
     version="1.0.0"
 )
 
-def data_processing(file: UploadFile):
+def get_dataframe(file: UploadFile = File(..., description="Arquivo CSV para análise.")):
     try:
+        file.file.seek(0)
         df = pd.read_csv(file.file)
         return df
     except Exception as e:
@@ -32,9 +33,7 @@ def read_root():
     return {"message": "Bem-vindo à API de Análise de Dados"}
 
 @app.post("/statistics", summary="Calcula Estatísticas Descritivas")
-async def get_statistics(file: UploadFile = File(..., description="Arquivo CSV para análise.")):
-    df = data_processing(file)
-
+async def get_statistics(df: pd.DataFrame = Depends(get_dataframe)):
     numeric_cols = df.select_dtypes(include=["number"]).columns.tolist()
     if not numeric_cols:
         raise HTTPException(status_code=400, detail="O arquivo CSV não contém colunas numéricas para análise.")
@@ -46,9 +45,8 @@ async def get_statistics(file: UploadFile = File(..., description="Arquivo CSV p
 @app.post("/preview/histogram", summary="Gera um Histograma")
 async def generate_histogram(
         column: str = Form(..., description="Nome da coluna para gerar o histograma."),
-        file: UploadFile = File(..., description="Arquivo CSV com os dados.")
+        df: pd.DataFrame = Depends(get_dataframe)
 ):
-    df = data_processing(file)
     if column not in df.columns:
         raise HTTPException(status_code=400, detail="")
     if not pd.api.types.is_numeric_dtype(df[column]):
@@ -72,10 +70,8 @@ async def generate_histogram(
 async def generate_bar_chart(
         column_x: str = Form(..., description="Nome da coluna categórica para o eixo X."),
         column_y: str = Form(..., description="Nome da coluna numérica para o eixo Y."),
-        file: UploadFile = File(..., description="Arquivo CSV com os dados.")
+        df: pd.DataFrame = Depends(get_dataframe)
 ):
-    df = data_processing(file)
-
     if column_x not in df.columns or column_y not in df.columns:
         raise HTTPException(status_code=400, detail="Uma ou ambas as colunas não foram encontradas no arquivo.")
     if not pd.api.types.is_numeric_dtype(df[column_y]):
@@ -100,9 +96,8 @@ async def generate_bar_chart(
 async def generate_scatter(
         column_x: str = Form(..., description="Nome da coluna categórica para o eixo X."),
         column_y: str = Form(..., description="Nome da coluna numérica para o eixo Y."),
-        file: UploadFile = File(..., description="Arquivo CSV com os dados.")
+        df: pd.DataFrame = Depends(get_dataframe)
 ):
-    df = data_processing(file)
 
     if column_x not in df.columns or column_y not in df.columns:
         raise HTTPException(status_code=400, detail="Uma ou ambas as colunas não foram encontradas no arquivo.")
@@ -124,9 +119,7 @@ async def generate_scatter(
     return StreamingResponse(buffer, media_type="image/png")
 
 @app.post("/analysis/correlation", summary="Calcula a Matriz de Correlação")
-async def get_correlation(file: UploadFile = File(..., description="Arquivo CSV para análise.")):
-    df = data_processing(file)
-
+async def get_correlation(df: pd.DataFrame = Depends(get_dataframe)):
     df_numeric = df.select_dtypes(include=["number"])
 
     if df_numeric.shape[1] < 2:
@@ -141,10 +134,8 @@ async def get_group(
         group_by: str = Form(..., description="Coluna categórica a ser usada para o agrupamento."),
         values: str = Form(..., description="Coluna numérica cujos valores serão agregados."),
         function: AggFunction = Form(..., description="A função de agregação a ser aplicada (soma, media, etc.)."),
-        file: UploadFile = File(..., description="Arquivo CSV com os dados.")
+        df: pd.DataFrame = Depends(get_dataframe)
 ):
-    df = data_processing(file)
-
     func_map = {
         "soma": "sum",
         "media": "mean",
