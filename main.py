@@ -4,6 +4,7 @@ import io
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Depends
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.concurrency import run_in_threadpool
 from typing import List
 from enum import Enum
 
@@ -13,13 +14,30 @@ app = FastAPI(
     version="1.0.0"
 )
 
-def get_dataframe(file: UploadFile = File(..., description="Arquivo CSV para análise.")):
+async def get_dataframe(file: UploadFile = File(..., description="Arquivo CSV para análise.")):
     try:
         file.file.seek(0)
-        df = pd.read_csv(file.file)
+        df = await run_in_threadpool(pd.read_csv, file.file)
         return df
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erro ao processar arquivo CSV: {e}")
+
+def create_histogram_buffer(df: pd.DataFrame, column: str) -> io.BytesIO:
+    plt.figure(figsize=(10, 6)); plt.hist(df[column], bins=20, color='skyblue', edgecolor='black')
+    plt.title(f'Histograma da Coluna: {column}'); plt.xlabel(column); plt.ylabel('Frequência'); plt.grid(True, linestyle='--', alpha=0.6)
+    buffer = io.BytesIO(); plt.savefig(buffer, format='png'); buffer.seek(0); plt.close(); return buffer
+
+def create_bar_chart_buffer(df: pd.DataFrame, column_x: str, column_y: str) -> io.BytesIO:
+    plt.figure(figsize=(12, 7)); plt.bar(df[column_x], df[column_y], color='cornflowerblue')
+    plt.title(f'Gráfico de Barras: {column_y} por {column_x}'); plt.xlabel(column_x); plt.ylabel(column_y)
+    plt.xticks(rotation=45, ha='right'); plt.tight_layout()
+    buffer = io.BytesIO(); plt.savefig(buffer, format='png'); buffer.seek(0); plt.close(); return buffer
+
+def create_scatter_buffer(df: pd.DataFrame, column_x: str, column_y: str) -> io.BytesIO:
+    plt.figure(figsize=(10, 6)); plt.scatter(df[column_x], df[column_y], alpha=0.7, color='purple')
+    plt.title(f'Gráfico de Dispersão: {column_y} vs. {column_x}'); plt.xlabel(column_x); plt.ylabel(column_y)
+    plt.grid(True, linestyle='--', alpha=0.6)
+    buffer = io.BytesIO(); plt.savefig(buffer, format='png'); buffer.seek(0); plt.close(); return buffer
 
 class AggFunction(str, Enum):
     soma = "soma",
@@ -47,23 +65,9 @@ async def generate_histogram(
         column: str = Form(..., description="Nome da coluna para gerar o histograma."),
         df: pd.DataFrame = Depends(get_dataframe)
 ):
-    if column not in df.columns:
-        raise HTTPException(status_code=400, detail="")
-    if not pd.api.types.is_numeric_dtype(df[column]):
-        raise HTTPException(status_code=400, detail="")
-
-    plt.figure(figsize=(10, 6))
-    plt.hist(df[column], bins=20, color="skyblue", edgecolor="black")
-    plt.title(label=f"Histograma da Coluna: {column}")
-    plt.xlabel(xlabel=column)
-    plt.ylabel(ylabel="Frequência")
-    plt.grid(True, linestyle="--", alpha=0.6)
-
-    buffer = io.BytesIO()
-    plt.savefig(buffer, format="png")
-    buffer.seek(0)
-    plt.close()
-
+    if column not in df.columns or not pd.api.types.is_numeric_dtype(df[column]):
+        raise HTTPException(status_code=400, detail=f"Coluna '{column}' inválida ou não numérica.")
+    buffer = await run_in_threadpool(create_histogram_buffer, df=df, column=column)
     return StreamingResponse(buffer, media_type="image/png")
 
 @app.post("/preview/bars", summary="Gera um Gráfico de Barras")
@@ -76,20 +80,7 @@ async def generate_bar_chart(
         raise HTTPException(status_code=400, detail="Uma ou ambas as colunas não foram encontradas no arquivo.")
     if not pd.api.types.is_numeric_dtype(df[column_y]):
         raise HTTPException(status_code=400, detail=f"A coluna do eixo Y ('{column_y}') deve ser numérica.")
-
-    plt.figure(figsize=(10, 7))
-    plt.bar(df[column_x], df[column_y], color='cornflowerblue')
-    plt.title(f"Gráfico de Barras: {column_y} por {column_x}")
-    plt.xlabel(column_x)
-    plt.ylabel(column_y)
-    plt.xticks(rotation=45, ha="right")
-    plt.tight_layout()
-
-    buffer = io.BytesIO()
-    plt.savefig(buffer, format="png")
-    buffer.seek(0)
-    plt.close()
-
+    buffer = await run_in_threadpool(create_bar_chart_buffer, df=df, column_x=column_x, column_y=column_y)
     return StreamingResponse(buffer, media_type="image/png")
 
 @app.post("/preview/scatter", summary="Gera um Gráfico de Dispersão")
@@ -98,24 +89,9 @@ async def generate_scatter(
         column_y: str = Form(..., description="Nome da coluna numérica para o eixo Y."),
         df: pd.DataFrame = Depends(get_dataframe)
 ):
-
-    if column_x not in df.columns or column_y not in df.columns:
-        raise HTTPException(status_code=400, detail="Uma ou ambas as colunas não foram encontradas no arquivo.")
-    if not pd.api.types.is_numeric_dtype(df[column_x]) or not pd.api.types.is_numeric_dtype(df[column_y]):
-        raise HTTPException(status_code=400, detail=f"Ambas as colunas devem ser numéricas para o gráfico de dispersão.")
-
-    plt.figure(figsize=(10, 6))
-    plt.scatter(df[column_x], df[column_y], alpha=0.7, color='purple')
-    plt.title(f"Gráfico de Dispersão: {column_y} vs. {column_x}")
-    plt.xlabel(column_x)
-    plt.ylabel(column_y)
-    plt.grid(visible=True, linestyle="--", alpha=0.6)
-
-    buffer = io.BytesIO()
-    plt.savefig(buffer, format="png")
-    buffer.seek(0)
-    plt.close()
-
+    if column_x not in df.columns or column_y not in df.columns or not pd.api.types.is_numeric_dtype(df[column_x]) or not pd.api.types.is_numeric_dtype(df[column_y]):
+        raise HTTPException(status_code=400, detail="Colunas inválidas ou não numéricas.")
+    buffer = run_in_threadpool(create_scatter_buffer, df=df, column_x=column_x, column_y=column_y)
     return StreamingResponse(buffer, media_type="image/png")
 
 @app.post("/analysis/correlation", summary="Calcula a Matriz de Correlação")
