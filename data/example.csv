@@ -1,0 +1,7 @@
+ID_Produto,Nome_Produto,Categoria,Preco,Quantidade_Vendida
+1,Laptop,Eletronicos,3500.00,150
+2,Smartphone,Eletronicos,2500.50,300
+3,Teclado,Acessorios,150.75,500
+4,Mouse,Acessorios,80.00,800
+5,Monitor,Eletronicos,1200.00,200
+6,Cadeira Gamer,Mobiliario,950.50,120
