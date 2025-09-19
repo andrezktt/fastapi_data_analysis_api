@@ -5,6 +5,7 @@ import io
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.responses import JSONResponse, StreamingResponse
 from typing import List
+from enum import Enum
 
 app = FastAPI(
     title="API de Análise de Dados com Pandas",
@@ -18,6 +19,13 @@ def data_processing(file: UploadFile):
         return df
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Erro ao processar arquivo CSV: {e}")
+
+class AggFunction(str, Enum):
+    soma = "soma",
+    media = "media",
+    contagem = "contagem",
+    maximo = "maximo",
+    minimo = "minimo"
 
 @app.get("/", summary="Endpoint Root")
 def read_root():
@@ -114,3 +122,47 @@ async def generate_scatter(
     plt.close()
 
     return StreamingResponse(buffer, media_type="image/png")
+
+@app.post("/analysis/correlation", summary="Calcula a Matriz de Correlação")
+async def get_correlation(file: UploadFile = File(..., description="Arquivo CSV para análise.")):
+    df = data_processing(file)
+
+    df_numeric = df.select_dtypes(include=["number"])
+
+    if df_numeric.shape[1] < 2:
+        raise HTTPException(status_code=400, detail="São necessárias pelo menos duas colunas numéricas para calcular a correlação.")
+
+    correlation = df_numeric.corr()
+    json_result = correlation.to_dict()
+    return JSONResponse(content=json_result)
+
+@app.post("/analysis/groupby", summary="Agrupa os Dados por Categoria")
+async def get_group(
+        group_by: str = Form(..., description="Coluna categórica a ser usada para o agrupamento."),
+        values: str = Form(..., description="Coluna numérica cujos valores serão agregados."),
+        function: AggFunction = Form(..., description="A função de agregação a ser aplicada (soma, media, etc.)."),
+        file: UploadFile = File(..., description="Arquivo CSV com os dados.")
+):
+    df = data_processing(file)
+
+    func_map = {
+        "soma": "sum",
+        "media": "mean",
+        "contagem": "count",
+        "maximo": "max",
+        "minimo": "min"
+    }
+
+    if group_by not in df.columns or values not in df.columns:
+        raise HTTPException(status_code=400, detail="")
+
+    if not pd.api.types.is_numeric_dtype(df[values]):
+        raise HTTPException(status_code=400, detail=f"A coluna de valor '{values}' deve ser numérica.")
+
+    try:
+        agg_func = func_map[function.value]
+        result = df.groupby(group_by)[values].agg(agg_func)
+        json_result = result.to_dict()
+        return JSONResponse(content=json_result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ocorreu um erro ao processar o agrupamento: {e}")
